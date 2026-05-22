@@ -27,13 +27,16 @@ def analyze_patient_case(patient_case):
         gait_result,
         coordinator_result,
     )
+    patient_name = getattr(patient_case, "patient_name", "Unknown Patient")
 
     report = {
         "patient_id": patient_case.patient_id,
+        "patient_name": patient_name,
         "summary": (
-            f"Patient {patient_case.patient_id} was analyzed by clinical, speech, and gait agents. "
-            f"The final risk level is {coordinator_result['final_prediction']} with "
-            f"a risk score of {coordinator_result['final_risk_score']}."
+            f"Patient {patient_name} ({patient_case.patient_id}) was analyzed by clinical, "
+            f"speech, and gait agents. The final risk level is "
+            f"{coordinator_result['final_prediction']} with a risk score of "
+            f"{coordinator_result['final_risk_score']}."
         ),
         "doctor_facing_explanation": (
             "The system used multimodal agent outputs to estimate Parkinson-related risk. "

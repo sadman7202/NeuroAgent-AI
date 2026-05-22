@@ -27,6 +27,7 @@ class GaitData(BaseModel):
 
 class PatientCase(BaseModel):
     patient_id: str
+    patient_name: Optional[str] = "Unknown Patient"
     age: int
     gender: str
     clinical: ClinicalData

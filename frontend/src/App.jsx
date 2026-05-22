@@ -1,6 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import "./App.css";
-import { getDemoPatient, analyzePatient } from "./services/api";
+import {
+  analyzePatient,
+  getDemoPatient,
+  getPatientById,
+  getPatients,
+} from "./services/api";
 
 const toPercent = (value) => {
   if (typeof value !== "number") return 0;
@@ -126,18 +131,161 @@ const AgentCard = ({ title, agentData, features, featureData }) => {
   );
 };
 
+const PatientListPanel = ({
+  patients,
+  filteredPatients,
+  selectedPatientId,
+  searchValue,
+  onSearchChange,
+  onSelectPatient,
+  loading,
+}) => {
+  const trimmedSearch = searchValue.trim();
+  const showNoPatients = !loading && patients.length === 0;
+  const showNoMatches =
+    !loading && patients.length > 0 && filteredPatients.length === 0 && trimmedSearch;
+
+  return (
+    <div className="card patient-list-panel">
+      <div className="patient-list-header">
+        <h3>Patient Cases</h3>
+        <span className="patient-count">{filteredPatients.length}</span>
+      </div>
+
+      <input
+        className="patient-search-input"
+        type="text"
+        placeholder="Search by patient name or ID..."
+        value={searchValue}
+        onChange={(event) => onSearchChange(event.target.value)}
+      />
+
+      <div className="patient-list">
+        {loading && (
+          <div className="patient-list-message">Loading patients...</div>
+        )}
+
+        {showNoPatients && (
+          <div className="patient-list-message">No patients available.</div>
+        )}
+
+        {showNoMatches && (
+          <div className="patient-list-message">No matching patient found.</div>
+        )}
+
+        {!loading && filteredPatients.length > 0 &&
+          filteredPatients.map((entry) => {
+            const medicationResponse =
+              entry.medication_response ?? entry.clinical?.medication_response;
+            const isSelected = selectedPatientId === entry.patient_id;
+
+            return (
+              <button
+                key={entry.patient_id}
+                type="button"
+                className={`patient-list-item${isSelected ? " selected" : ""}`}
+                onClick={() => onSelectPatient(entry.patient_id)}
+              >
+                <div className="patient-name-block">
+                  <strong>{safeValue(entry.patient_name)}</strong>
+                  <span>{safeValue(entry.patient_id)}</span>
+                </div>
+
+                <div className="patient-meta">
+                  <span>Age {safeValue(entry.age)}</span>
+                  <span>{formatLabel(entry.gender)}</span>
+                </div>
+
+                <div className="patient-meta">
+                  <span>Medication Response</span>
+                  <span>{formatLabel(medicationResponse)}</span>
+                </div>
+              </button>
+            );
+          })}
+      </div>
+    </div>
+  );
+};
+
 function App() {
   const [patient, setPatient] = useState(null);
   const [analysis, setAnalysis] = useState(null);
+  const [patients, setPatients] = useState([]);
+  const [patientSearch, setPatientSearch] = useState("");
+  const [loadingPatients, setLoadingPatients] = useState(false);
   const [loadingPatient, setLoadingPatient] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [error, setError] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const [activePage, setActivePage] = useState("patient-case");
 
+  const loadPatientList = async () => {
+    setLoadingPatients(true);
+    setError("");
+
+    try {
+      const data = await getPatients();
+      setPatients(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setError("Could not load patients. Check if the backend is running.");
+    } finally {
+      setLoadingPatients(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPatientList();
+  }, []);
+
+  const filteredPatients = useMemo(() => {
+    const term = patientSearch.trim().toLowerCase();
+
+    if (!term) return patients;
+
+    return patients.filter((entry) => {
+      const id = String(entry.patient_id || "").toLowerCase();
+      const name = String(entry.patient_name || "").toLowerCase();
+
+      return id.includes(term) || name.includes(term);
+    });
+  }, [patients, patientSearch]);
+
   const coordinator = analysis?.agent_results?.coordinator;
   const triage = analysis?.agent_results?.triage;
   const critic = analysis?.agent_results?.critic;
+  const diseaseDuration =
+    patient?.clinical?.disease_duration_years ?? patient?.disease_duration_years;
+  const medicationResponse =
+    patient?.clinical?.medication_response ?? patient?.medication_response;
+
+  const handleSearchChange = (value) => {
+    setPatientSearch(value);
+  };
+
+  const handleSelectPatient = async (patientId) => {
+    if (!patientId) return;
+
+    setLoadingPatient(true);
+    setError("");
+    setStatusMsg("");
+    setAnalysis(null);
+
+    try {
+      const selectedPatient = await getPatientById(patientId);
+      setPatient(selectedPatient);
+      setActivePage("patient-case");
+      const loadedName = selectedPatient?.patient_name || patientId;
+      setStatusMsg(`Loaded patient ${loadedName}`);
+      setTimeout(() => setStatusMsg(""), 2500);
+    } catch (err) {
+      console.error(err);
+      setError("Could not load patient profile. Check if the backend is running.");
+    } finally {
+      setLoadingPatient(false);
+    }
+  };
 
   const handleLoadDemo = async () => {
     setLoadingPatient(true);
@@ -151,7 +299,8 @@ function App() {
       setPatient(loadedPatient);
       setAnalysis(null);
       setActivePage("patient-case");
-      setStatusMsg("Demo patient loaded");
+      const demoName = loadedPatient?.patient_name;
+      setStatusMsg(demoName ? `Loaded patient ${demoName}` : "Demo patient loaded");
       setTimeout(() => setStatusMsg(""), 2500);
     } catch (err) {
       console.error(err);
@@ -191,26 +340,18 @@ function App() {
     setError("");
 
     if (page === "agent-analysis" && !analysis) {
-      setStatusMsg("Run agent analysis first to view agent outputs");
-    } else if (page === "reports" && !analysis) {
-      setStatusMsg("Run agent analysis first to generate a report");
-    } else if (page === "settings") {
-      setStatusMsg("Viewing MVP settings");
-    } else {
-      setStatusMsg("");
-    }
-
-    if (page === "agent-analysis" && !analysis) {
+      setStatusMsg("Run agent analysis first.");
       setTimeout(() => setStatusMsg(""), 2500);
+      return;
     }
 
     if (page === "reports" && !analysis) {
+      setStatusMsg("Run agent analysis first to generate a report.");
       setTimeout(() => setStatusMsg(""), 2500);
+      return;
     }
 
-    if (page === "settings") {
-      setTimeout(() => setStatusMsg(""), 2500);
-    }
+    setStatusMsg("");
   };
 
   const handleAction = (action) => {
@@ -306,7 +447,7 @@ function App() {
                 className="btn btn-primary"
                 type="button"
                 onClick={handleRunAnalysis}
-                disabled={loadingAnalysis || !patient}
+                disabled={loadingAnalysis || loadingPatient || !patient}
               >
                 {loadingAnalysis ? "Analyzing..." : "Run Agent Analysis"}
               </button>
@@ -317,90 +458,183 @@ function App() {
           {statusMsg && <div className="status-toast">{statusMsg}</div>}
 
           {activePage === "patient-case" && (
-            <>
-              {!patient && (
-                <div className="empty-state">
-                  <h2>No patient loaded</h2>
-                  <p>Load a demo patient case to begin AI-assisted assessment.</p>
-                </div>
-              )}
+            <div className="patient-case-layout">
+              <PatientListPanel
+                patients={patients}
+                filteredPatients={filteredPatients}
+                selectedPatientId={patient?.patient_id}
+                searchValue={patientSearch}
+                onSearchChange={handleSearchChange}
+                onSelectPatient={handleSelectPatient}
+                loading={loadingPatients}
+              />
 
-              {patient && (
-                <div className="card patient-profile">
-                  <div className="card-title-row">
-                    <h3>Patient Profile</h3>
-                    <span className="patient-id-badge">
-                      {safeValue(patient.patient_id)}
-                    </span>
+              <div className="patient-case-panel">
+                {loadingPatient && !patient && (
+                  <div className="empty-state">
+                    <h2>Loading patient profile</h2>
+                    <p>Please wait while we fetch the patient details.</p>
                   </div>
+                )}
 
-                  <div className="patient-data">
-                    <div className="data-box">
-                      <label>Age</label>
-                      <span>{safeValue(patient.age)} Years</span>
-                    </div>
+                {!loadingPatient && !patient && (
+                  <div className="empty-state">
+                    <h2>No patient selected</h2>
+                    <p>
+                      Select a patient from the patient cases menu or load the demo patient.
+                    </p>
+                  </div>
+                )}
 
-                    <div className="data-box">
-                      <label>Gender</label>
-                      <span>{formatLabel(patient.gender)}</span>
-                    </div>
-
-                    <div className="data-box">
-                      <label>Disease Duration</label>
-                      <span>
-                        {safeValue(patient.clinical?.disease_duration_years)} Years
+                {patient && (
+                  <div className="card patient-profile">
+                    <div className="card-title-row">
+                      <div>
+                        <h3>Patient Profile</h3>
+                        <p className="patient-profile-name">
+                          {safeValue(patient.patient_name)}
+                        </p>
+                      </div>
+                      <span className="patient-id-badge">
+                        {safeValue(patient.patient_id)}
                       </span>
                     </div>
 
-                    <div className="data-box">
-                      <label>Medication Response</label>
-                      <span>{formatLabel(patient.clinical?.medication_response)}</span>
+                    <div className="patient-section">
+                      <h4 className="patient-section-title">Clinical Snapshot</h4>
+                      <div className="patient-data">
+                        <div className="data-box">
+                          <label>Age</label>
+                          <span>
+                            {typeof patient.age === "number"
+                              ? `${patient.age} Years`
+                              : safeValue(patient.age)}
+                          </span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Gender</label>
+                          <span>{formatLabel(patient.gender)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Disease Duration</label>
+                          <span>
+                            {typeof diseaseDuration === "number"
+                              ? `${diseaseDuration} Years`
+                              : safeValue(diseaseDuration)}
+                          </span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Medication Response</label>
+                          <span>{formatLabel(medicationResponse)}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="data-box">
-                      <label>UPDRS Score</label>
-                      <span>{safeValue(patient.clinical?.updrs_score)}</span>
+                    <div className="patient-section">
+                      <h4 className="patient-section-title">Clinical Scores</h4>
+                      <div className="patient-data">
+                        <div className="data-box">
+                          <label>UPDRS Score</label>
+                          <span>{safeValue(patient.clinical?.updrs_score)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Tremor Score</label>
+                          <span>{safeValue(patient.clinical?.tremor_score)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Rigidity Score</label>
+                          <span>{safeValue(patient.clinical?.rigidity_score)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Bradykinesia Score</label>
+                          <span>{safeValue(patient.clinical?.bradykinesia_score)}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="data-box">
-                      <label>Tremor Score</label>
-                      <span>{safeValue(patient.clinical?.tremor_score)}</span>
+                    <div className="patient-section">
+                      <h4 className="patient-section-title">Speech Features</h4>
+                      <div className="patient-data">
+                        <div className="data-box">
+                          <label>Jitter</label>
+                          <span>{safeValue(patient.speech?.jitter)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Shimmer</label>
+                          <span>{safeValue(patient.speech?.shimmer)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>HNR</label>
+                          <span>{safeValue(patient.speech?.hnr)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Pitch Variation</label>
+                          <span>{safeValue(patient.speech?.pitch_variation)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="patient-section">
+                      <h4 className="patient-section-title">Gait Features</h4>
+                      <div className="patient-data">
+                        <div className="data-box">
+                          <label>Walking Speed</label>
+                          <span>{safeValue(patient.gait?.walking_speed)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Stride Variability</label>
+                          <span>{safeValue(patient.gait?.stride_variability)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Freezing Index</label>
+                          <span>{safeValue(patient.gait?.freezing_index)}</span>
+                        </div>
+
+                        <div className="data-box">
+                          <label>Balance Score</label>
+                          <span>{safeValue(patient.gait?.balance_score)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="clinical-notes">
+                      <label>Clinical Notes</label>
+                      <p>{safeValue(patient.notes)}</p>
                     </div>
                   </div>
-
-                  <div className="clinical-notes">
-                    <label>Clinical Notes</label>
-                    <p>{safeValue(patient.notes)}</p>
-                  </div>
-                </div>
-              )}
-            </>
+                )}
+              </div>
+            </div>
           )}
 
           {activePage === "agent-analysis" && (
             <>
-              {!patient && (
-                <div className="empty-state">
-                  <h2>No patient case available</h2>
-                  <p>Load a demo patient before running agent analysis.</p>
-                </div>
-              )}
-
-              {patient && !analysis && (
+              {!analysis && (
                 <div className="empty-state">
                   <h2>Analysis not generated yet</h2>
-                  <p>Click “Run Agent Analysis” to generate clinical, speech, gait, triage, and safety outputs.</p>
+                  <p>Select a patient and run agent analysis to view results.</p>
                 </div>
               )}
 
-              {patient && analysis && (
+              {analysis && (
                 <div className="dashboard-grid">
                   <div className="grid-main">
                     <div className="agent-cards-container">
                       <AgentCard
                         title="Clinical Agent"
                         agentData={analysis.agent_results.clinical}
-                        featureData={patient.clinical}
+                        featureData={patient?.clinical}
                         features={[
                           { label: "UPDRS Score", key: "updrs_score" },
                           { label: "Tremor Score", key: "tremor_score" },
@@ -412,7 +646,7 @@ function App() {
                       <AgentCard
                         title="Speech Agent"
                         agentData={analysis.agent_results.speech}
-                        featureData={patient.speech}
+                        featureData={patient?.speech}
                         features={[
                           { label: "Jitter", key: "jitter" },
                           { label: "Shimmer", key: "shimmer" },
@@ -424,7 +658,7 @@ function App() {
                       <AgentCard
                         title="Gait Agent"
                         agentData={analysis.agent_results.gait}
-                        featureData={patient.gait}
+                        featureData={patient?.gait}
                         features={[
                           { label: "Walking Speed", key: "walking_speed" },
                           { label: "Stride Variability", key: "stride_variability" },
@@ -586,35 +820,9 @@ function App() {
           )}
 
           {activePage === "settings" && (
-            <div className="settings-grid">
-              <div className="card settings-card">
-                <h3>Project Status</h3>
-                <p><strong>Version:</strong> Clinical AI v0.1</p>
-                <p><strong>Mode:</strong> Rule-based Docker MVP</p>
-                <p><strong>Backend:</strong> FastAPI</p>
-                <p><strong>Frontend:</strong> Vite React</p>
-              </div>
-
-              <div className="card settings-card">
-                <h3>Current MVP Modules</h3>
-                <ul>
-                  <li>Clinical Agent</li>
-                  <li>Speech Agent</li>
-                  <li>Gait Agent</li>
-                  <li>Coordinator Agent</li>
-                  <li>Triage Agent</li>
-                  <li>Critic / Safety Agent</li>
-                </ul>
-              </div>
-
-              <div className="card settings-card">
-                <h3>Safety Notice</h3>
-                <p>
-                  This system is a clinical decision-support prototype only.
-                  It does not provide final diagnosis, prescription, treatment,
-                  or medical decision-making.
-                </p>
-              </div>
+            <div className="card settings-placeholder">
+              <h3>Settings</h3>
+              <p>Settings page is not implemented yet.</p>
             </div>
           )}
         </section>

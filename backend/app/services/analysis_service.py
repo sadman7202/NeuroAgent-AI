@@ -3,6 +3,7 @@ from app.agents.speech_agent import analyze_speech
 from app.agents.gait_agent import analyze_gait
 from app.agents.coordinator_agent import coordinate_agents
 from app.agents.triage_agent import assign_triage
+from app.agents.conflict_agent import detect_conflicts
 from app.agents.critic_agent import run_critic
 
 
@@ -21,12 +22,21 @@ def analyze_patient_case(patient_case):
         coordinator_result["final_risk_score"]
     )
 
-    critic_result = run_critic(
+    conflict_result = detect_conflicts(
         clinical_result,
         speech_result,
         gait_result,
         coordinator_result,
     )
+
+    critic_result = run_critic(
+        clinical_result,
+        speech_result,
+        gait_result,
+        coordinator_result,
+        conflict_result,
+    )
+
     patient_name = getattr(patient_case, "patient_name", "Unknown Patient")
 
     report = {
@@ -39,7 +49,9 @@ def analyze_patient_case(patient_case):
             f"{coordinator_result['final_risk_score']}."
         ),
         "doctor_facing_explanation": (
-            "The system used multimodal agent outputs to estimate Parkinson-related risk. "
+            f"The system used multimodal agent outputs to estimate Parkinson-related risk. "
+            f"The coordinated risk level is {coordinator_result['final_risk_level']}. "
+            f"Conflict analysis result: {conflict_result['conflict_type']}. "
             "This result should be reviewed by a qualified neurologist before any clinical decision."
         ),
     }
@@ -52,6 +64,7 @@ def analyze_patient_case(patient_case):
             "gait": gait_result,
             "coordinator": coordinator_result,
             "triage": triage_result,
+            "conflict": conflict_result,
             "critic": critic_result,
         },
         "report": report,

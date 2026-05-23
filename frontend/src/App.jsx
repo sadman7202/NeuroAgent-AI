@@ -45,6 +45,17 @@ const getRiskClass = (score) => {
   return "risk-low";
 };
 
+const getConflictClass = (level) => {
+  const value = String(level || "").toLowerCase();
+
+  if (value === "high") return "conflict-high";
+  if (value === "moderate") return "conflict-moderate";
+  if (value === "low") return "conflict-low";
+  if (value === "none") return "conflict-none";
+
+  return "conflict-neutral";
+};
+
 const getFeatureUnit = (key) => {
   const units = {
     walking_speed: " m/s",
@@ -102,6 +113,13 @@ const AgentCard = ({ title, agentData, features, featureData }) => {
           <label>Severity</label>
           <span>{formatLabel(agentData.severity)}</span>
         </div>
+
+        <div className="stat-item">
+          <label>Risk Level</label>
+          <span className="risk-level-text">
+            {safeValue(formatLabel(agentData.risk_level))}
+          </span>
+        </div>
       </div>
 
       <p className="agent-explanation">{safeValue(agentData.explanation)}</p>
@@ -126,6 +144,67 @@ const AgentCard = ({ title, agentData, features, featureData }) => {
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+const ConflictPanel = ({ conflict }) => {
+  if (!conflict) return null;
+
+  const detected = Boolean(conflict.conflict_detected);
+  const riskGap =
+    typeof conflict.risk_gap === "number"
+      ? conflict.risk_gap.toFixed(2)
+      : safeValue(conflict.risk_gap);
+
+  return (
+    <div
+      className={`card conflict-panel ${getConflictClass(conflict.conflict_level)}`}
+    >
+      <div className="conflict-header">
+        <h3>Agent Conflict Analysis</h3>
+        <span className="conflict-status-badge">
+          {detected ? "Conflict Detected" : "No Major Conflict"}
+        </span>
+      </div>
+
+      <div className="conflict-type">
+        {safeValue(formatLabel(conflict.conflict_type))}
+      </div>
+
+      <p className="conflict-summary">{safeValue(conflict.explanation)}</p>
+
+      <div className="conflict-details">
+        <div>
+          <label>Conflict Detected</label>
+          <strong>{detected ? "Yes" : "No"}</strong>
+        </div>
+
+        <div>
+          <label>Conflict Level</label>
+          <strong>{safeValue(formatLabel(conflict.conflict_level))}</strong>
+        </div>
+
+        <div>
+          <label>Risk Gap</label>
+          <strong>{riskGap}</strong>
+        </div>
+
+        <div>
+          <label>Highest Risk Agent</label>
+          <strong>{safeValue(formatLabel(conflict.highest_risk_agent))}</strong>
+        </div>
+
+        <div>
+          <label>Lowest Risk Agent</label>
+          <strong>{safeValue(formatLabel(conflict.lowest_risk_agent))}</strong>
+        </div>
+      </div>
+
+      <div className="conflict-recommendation">
+        <label>Recommendation</label>
+        <p>{safeValue(conflict.recommendation)}</p>
       </div>
     </div>
   );
@@ -255,6 +334,7 @@ function App() {
   const coordinator = analysis?.agent_results?.coordinator;
   const triage = analysis?.agent_results?.triage;
   const critic = analysis?.agent_results?.critic;
+  const conflict = analysis?.agent_results?.conflict;
   const diseaseDuration =
     patient?.clinical?.disease_duration_years ?? patient?.disease_duration_years;
   const medicationResponse =
@@ -628,139 +708,198 @@ function App() {
               )}
 
               {analysis && (
-                <div className="dashboard-grid">
-                  <div className="grid-main">
-                    <div className="agent-cards-container">
-                      <AgentCard
-                        title="Clinical Agent"
-                        agentData={analysis.agent_results.clinical}
-                        featureData={patient?.clinical}
-                        features={[
-                          { label: "UPDRS Score", key: "updrs_score" },
-                          { label: "Tremor Score", key: "tremor_score" },
-                          { label: "Rigidity Score", key: "rigidity_score" },
-                          { label: "Bradykinesia Score", key: "bradykinesia_score" },
-                        ]}
-                      />
+                <div className="analysis-layout">
+                  <div className="analysis-agent-row">
+                    <AgentCard
+                      title="Clinical Agent"
+                      agentData={analysis.agent_results.clinical}
+                      featureData={patient?.clinical}
+                      features={[
+                        { label: "UPDRS Score", key: "updrs_score" },
+                        { label: "Tremor Score", key: "tremor_score" },
+                        { label: "Rigidity Score", key: "rigidity_score" },
+                        { label: "Bradykinesia Score", key: "bradykinesia_score" },
+                      ]}
+                    />
 
-                      <AgentCard
-                        title="Speech Agent"
-                        agentData={analysis.agent_results.speech}
-                        featureData={patient?.speech}
-                        features={[
-                          { label: "Jitter", key: "jitter" },
-                          { label: "Shimmer", key: "shimmer" },
-                          { label: "HNR", key: "hnr" },
-                          { label: "Pitch Variation", key: "pitch_variation" },
-                        ]}
-                      />
+                    <AgentCard
+                      title="Speech Agent"
+                      agentData={analysis.agent_results.speech}
+                      featureData={patient?.speech}
+                      features={[
+                        { label: "Jitter", key: "jitter" },
+                        { label: "Shimmer", key: "shimmer" },
+                        { label: "HNR", key: "hnr" },
+                        { label: "Pitch Variation", key: "pitch_variation" },
+                      ]}
+                    />
 
-                      <AgentCard
-                        title="Gait Agent"
-                        agentData={analysis.agent_results.gait}
-                        featureData={patient?.gait}
-                        features={[
-                          { label: "Walking Speed", key: "walking_speed" },
-                          { label: "Stride Variability", key: "stride_variability" },
-                          { label: "Freezing Index", key: "freezing_index" },
-                          { label: "Balance Score", key: "balance_score" },
-                        ]}
-                      />
-                    </div>
+                    <AgentCard
+                      title="Gait Agent"
+                      agentData={analysis.agent_results.gait}
+                      featureData={patient?.gait}
+                      features={[
+                        { label: "Walking Speed", key: "walking_speed" },
+                        { label: "Stride Variability", key: "stride_variability" },
+                        { label: "Freezing Index", key: "freezing_index" },
+                        { label: "Balance Score", key: "balance_score" },
+                      ]}
+                    />
                   </div>
 
-                  <div className="grid-side">
-                    {coordinator && (
-                      <div className={`card risk-card ${getRiskClass(coordinator.final_risk_score)}`}>
-                        <div className="risk-header">
-                          <div className="risk-value">
-                            <span>{toPercent(coordinator.final_risk_score)}</span>/100
-                          </div>
-                          <h3>Unified Risk Analysis</h3>
-                        </div>
-
-                        <div className="prediction-label">
-                          {formatLabel(coordinator.final_prediction)}
-                        </div>
-
-                        <p className="agreement-text">
-                          {safeValue(coordinator.agent_agreement)}
-                        </p>
-
-                        <p className="risk-explanation">
-                          {safeValue(coordinator.explanation)}
-                        </p>
-
-                        <div className="supporting-agents">
-                          {coordinator.supporting_agents?.length > 0 ? (
-                            coordinator.supporting_agents.map((agent) => (
-                              <span key={agent} className="support-badge">
-                                {formatLabel(agent)}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="support-badge">No elevated-risk agent</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {triage && (
-                      <div className={`card triage-panel ${getPriorityClass(triage.priority)}`}>
-                        <div className="triage-header">
-                          <span className="priority-badge">
-                            Priority {formatLabel(triage.priority)}
-                          </span>
-                          <h3>Triage Level</h3>
-                        </div>
-
-                        <div className="triage-type">
-                          {formatLabel(triage.triage_level)}
-                        </div>
-
-                        <div className="recommendation-box">
-                          <label>Recommendation</label>
-                          <p>{safeValue(triage.recommendation)}</p>
-                        </div>
-
-                        <button
-                          className="btn btn-accent full-width"
-                          type="button"
-                          onClick={() => handleAction("Escalated to neurologist")}
+                  {(coordinator || triage) && (
+                    <div className="analysis-decision-row">
+                      {coordinator && (
+                        <div
+                          className={`card risk-card ${getRiskClass(
+                            coordinator.final_risk_score,
+                          )}`}
                         >
-                          Escalate to Neurologist
-                        </button>
-                      </div>
-                    )}
+                          <div className="risk-header">
+                            <div className="risk-value">
+                              <span>{toPercent(coordinator.final_risk_score)}</span>/100
+                            </div>
+                            <h3>Unified Risk Analysis</h3>
+                          </div>
 
-                    {critic && (
-                      <div className="card safety-monitor">
-                        <div className="safety-header">
-                          <span className="safety-icon">🛡️</span>
-                          <h3>Safety Monitor</h3>
+                          <div className="prediction-label">
+                            {formatLabel(coordinator.final_prediction)}
+                          </div>
+
+                          <div className="risk-level-text">
+                            Final Risk Level:{" "}
+                            {safeValue(formatLabel(coordinator.final_risk_level))}
+                          </div>
+
+                          <p className="agreement-text">
+                            {safeValue(coordinator.agent_agreement)}
+                          </p>
+
+                          <p className="risk-explanation">
+                            {safeValue(coordinator.explanation)}
+                          </p>
+
+                          <div className="supporting-agent-group">
+                            <p>Elevated Supporting Agents</p>
+                            <div className="supporting-agent-list">
+                              {coordinator.supporting_agents?.length > 0 ? (
+                                coordinator.supporting_agents.map((agent) => (
+                                  <span key={agent} className="support-badge">
+                                    {formatLabel(agent)}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="support-badge">
+                                  No elevated-risk agents
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="borderline-agents">
+                            <p>Borderline Agents</p>
+                            <div className="borderline-agent-list">
+                              {coordinator.borderline_agents?.length > 0 ? (
+                                coordinator.borderline_agents.map((agent) => (
+                                  <span key={agent} className="borderline-badge">
+                                    {formatLabel(agent)}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="borderline-badge">
+                                  No borderline agents
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {triage && (
+                        <div className={`card triage-panel ${getPriorityClass(triage.priority)}`}>
+                          <div className="triage-header">
+                            <span className="priority-badge">
+                              Priority {formatLabel(triage.priority)}
+                            </span>
+                            <h3>Triage Level</h3>
+                          </div>
+
+                          <div className="triage-type">
+                            {formatLabel(triage.triage_level)}
+                          </div>
+
+                          <div className="recommendation-box">
+                            <label>Recommendation</label>
+                            <p>{safeValue(triage.recommendation)}</p>
+                          </div>
+
+                          <button
+                            className="btn btn-accent full-width"
+                            type="button"
+                            onClick={() => handleAction("Escalated to neurologist")}
+                          >
+                            Escalate to Neurologist
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(conflict || critic) && (
+                    <div className="analysis-safety-row">
+                      <ConflictPanel conflict={conflict} />
+
+                      {critic && (
+                        <div className="card safety-monitor">
+                          <div className="safety-header">
+                            <span className="safety-icon">🛡️</span>
+                            <h3>Safety Monitor</h3>
+                          </div>
+
+                          <div className="review-status">
+                            Status:{" "}
+                            <strong>
+                              {critic.requires_human_review
+                                ? "Requires Human Review"
+                                : "No Critical Warning"}
+                            </strong>
+                          </div>
+
+                          <ul className="warnings-list">
+                            {critic.warnings?.length ? (
+                              critic.warnings.map((warning, index) => (
+                                <li key={`${warning}-${index}`}>{warning}</li>
+                              ))
+                            ) : (
+                              <li>No warnings reported.</li>
+                            )}
+                          </ul>
+
+                          <footer className="safety-disclaimer">
+                            This is clinical decision support only. Not a final medical diagnosis.
+                          </footer>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {analysis.report && (
+                    <div className="analysis-report-preview">
+                      <div className="card report-section">
+                        <h3>Doctor Summary</h3>
+
+                        <div className="summary-box">
+                          <label>Summary</label>
+                          <p>{safeValue(analysis.report?.summary)}</p>
                         </div>
 
-                        <div className="review-status">
-                          Status:{" "}
-                          <strong>
-                            {critic.requires_human_review
-                              ? "Requires Human Review"
-                              : "No Critical Warning"}
-                          </strong>
+                        <div className="explanation-box">
+                          <label>Doctor-Facing Explanation</label>
+                          <p>{safeValue(analysis.report?.doctor_facing_explanation)}</p>
                         </div>
-
-                        <ul className="warnings-list">
-                          {critic.warnings?.map((warning) => (
-                            <li key={warning}>{warning}</li>
-                          ))}
-                        </ul>
-
-                        <footer className="safety-disclaimer">
-                          This is clinical decision support only. Not a final medical diagnosis.
-                        </footer>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -787,6 +926,43 @@ function App() {
                   <div className="explanation-box">
                     <label>Clinical Interpretation</label>
                     <p>{safeValue(analysis.report?.doctor_facing_explanation)}</p>
+                  </div>
+
+                  <div className="metadata-grid">
+                    <div className="metadata-item">
+                      <label>Patient Name</label>
+                      <span>{safeValue(analysis.report?.patient_name)}</span>
+                    </div>
+
+                    <div className="metadata-item">
+                      <label>Patient ID</label>
+                      <span>{safeValue(analysis.report?.patient_id)}</span>
+                    </div>
+
+                    <div className="metadata-item">
+                      <label>Final Risk Level</label>
+                      <span>{safeValue(formatLabel(coordinator?.final_risk_level))}</span>
+                    </div>
+
+                    <div className="metadata-item">
+                      <label>Final Prediction</label>
+                      <span>{safeValue(formatLabel(coordinator?.final_prediction))}</span>
+                    </div>
+
+                    <div className="metadata-item">
+                      <label>Conflict Type</label>
+                      <span>{safeValue(formatLabel(conflict?.conflict_type))}</span>
+                    </div>
+
+                    <div className="metadata-item">
+                      <label>Conflict Level</label>
+                      <span>{safeValue(formatLabel(conflict?.conflict_level))}</span>
+                    </div>
+
+                    <div className="metadata-item">
+                      <label>Triage Priority</label>
+                      <span>{safeValue(formatLabel(triage?.priority))}</span>
+                    </div>
                   </div>
 
                   <div className="report-footer-actions">

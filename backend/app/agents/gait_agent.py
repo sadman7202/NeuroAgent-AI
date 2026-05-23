@@ -1,3 +1,6 @@
+from app.agents.risk_utils import clamp_score, format_prediction, get_risk_level
+
+
 def analyze_gait(gait_data):
     walking_speed = gait_data.walking_speed
     stride_variability = gait_data.stride_variability
@@ -16,11 +19,22 @@ def analyze_gait(gait_data):
         + balance_risk * 0.2
     )
 
+    risk_score = clamp_score(risk_score)
+    risk_level = get_risk_level(risk_score)
+
+    if risk_level in ["high", "moderate"]:
+        severity = "movement_abnormality"
+    elif risk_level == "borderline":
+        severity = "borderline_gait_change"
+    else:
+        severity = "normal_or_mild"
+
     return {
         "agent_name": "gait_agent",
         "risk_score": round(risk_score, 2),
-        "prediction": "gait_instability_detected" if risk_score >= 0.5 else "low_gait_risk",
-        "severity": "movement_abnormality" if risk_score >= 0.5 else "normal_or_mild",
+        "risk_level": risk_level,
+        "prediction": format_prediction("gait", risk_level),
+        "severity": severity,
         "confidence": round(min(0.9, 0.5 + risk_score * 0.4), 2),
         "top_features": [
             "walking_speed",
@@ -29,6 +43,7 @@ def analyze_gait(gait_data):
             "balance_score",
         ],
         "explanation": (
-            "Gait agent analyzed walking speed, stride variability, freezing index, and balance score."
+            f"Gait agent estimated a {risk_level} movement-related risk level. "
+            "It analyzed walking speed, stride variability, freezing index, and balance score."
         ),
     }

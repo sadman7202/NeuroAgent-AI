@@ -1,3 +1,6 @@
+from app.agents.risk_utils import clamp_score, format_prediction, get_risk_level
+
+
 def analyze_speech(speech_data):
     jitter = speech_data.jitter
     shimmer = speech_data.shimmer
@@ -16,11 +19,22 @@ def analyze_speech(speech_data):
         + pitch_score * 0.2
     )
 
+    risk_score = clamp_score(risk_score)
+    risk_level = get_risk_level(risk_score)
+
+    if risk_level in ["high", "moderate"]:
+        severity = "speech_abnormality"
+    elif risk_level == "borderline":
+        severity = "borderline_speech_change"
+    else:
+        severity = "normal_or_mild"
+
     return {
         "agent_name": "speech_agent",
         "risk_score": round(risk_score, 2),
-        "prediction": "voice_instability_detected" if risk_score >= 0.5 else "low_voice_risk",
-        "severity": "speech_abnormality" if risk_score >= 0.5 else "normal_or_mild",
+        "risk_level": risk_level,
+        "prediction": format_prediction("speech", risk_level),
+        "severity": severity,
         "confidence": round(min(0.9, 0.5 + risk_score * 0.4), 2),
         "top_features": [
             "jitter",
@@ -29,6 +43,7 @@ def analyze_speech(speech_data):
             "pitch_variation",
         ],
         "explanation": (
-            "Speech agent analyzed jitter, shimmer, HNR, and pitch variation to estimate voice instability."
+            f"Speech agent estimated a {risk_level} speech-related risk level. "
+            "It analyzed jitter, shimmer, HNR, and pitch variation to estimate voice instability."
         ),
     }
